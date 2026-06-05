@@ -1,0 +1,9 @@
+{
+  "messageId": "abc-125",
+  "response": {
+    "operation": { "airConOperationMode": "POWER_ON" },
+    "airConJobMode": { "currentJobMode": "COOL" },
+    "temperature": { "currentTemperature": 24, "targetTemperature": 22, "unit": "C" },
+    "airFlow": { "windStrength": "HIGH" }
+  }
+}

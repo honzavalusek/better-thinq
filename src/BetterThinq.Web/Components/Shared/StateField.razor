@@ -1,0 +1,9 @@
+<div>
+    <div class="text-[10px] uppercase tracking-wide text-gray-400">@Label</div>
+    <div class="text-base font-medium">@(string.IsNullOrEmpty(Value) ? "—" : Value)</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+}

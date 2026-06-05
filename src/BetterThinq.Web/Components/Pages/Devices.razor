@@ -1,0 +1,111 @@
+@page "/devices"
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject ThinqClientProvider ClientProvider
+@inject ILogger<Devices> Logger
+
+<PageTitle>Devices · BetterThinQ</PageTitle>
+
+<header class="px-4 pt-8 pb-3 sticky top-0 bg-gray-50/95 backdrop-blur z-10 flex items-baseline justify-between">
+    <h1 class="text-2xl font-semibold tracking-tight">Devices</h1>
+    <button @onclick="Refresh" disabled="@busy"
+            class="text-sm bg-blue-600 disabled:opacity-60 text-white rounded-lg px-3 py-2 min-h-[44px] min-w-[88px]">
+        @(busy ? "Refreshing…" : "Refresh")
+    </button>
+</header>
+
+<div class="px-4 space-y-3">
+    @if (devices.Count == 0 && !busy)
+    {
+        <div class="text-center text-gray-500 py-12 text-sm">
+            No devices yet. Tap <strong>Refresh</strong> to fetch from LG.
+        </div>
+    }
+    @foreach (var d in devices)
+    {
+        <a href="@($"/devices/{Uri.EscapeDataString(d.Id)}")"
+           class="block bg-white rounded-xl border border-gray-200 p-4 min-h-[44px] hover:bg-gray-50 active:bg-gray-100 transition">
+            <div class="flex items-baseline justify-between gap-3">
+                <div class="font-medium text-base truncate">@d.Alias</div>
+                <div class="text-[10px] font-mono text-gray-400 uppercase">@ShortType(d.DeviceType)</div>
+            </div>
+            <div class="text-xs text-gray-500 mt-1">@d.ModelName</div>
+        </a>
+    }
+
+    @if (error is not null)
+    {
+        <div class="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3 whitespace-pre-wrap">@error</div>
+    }
+</div>
+
+@code {
+    private List<Device> devices = [];
+    private bool busy;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        devices = await Db.Devices.AsNoTracking().OrderBy(d => d.Alias).ToListAsync();
+    }
+
+    private async Task Refresh()
+    {
+        busy = true; error = null;
+        try
+        {
+            var client = await ClientProvider.GetAsync();
+            if (client is null)
+            {
+                error = "Settings not configured.";
+                return;
+            }
+
+            var summaries = await client.GetDevicesAsync();
+            foreach (var s in summaries)
+            {
+                var existing = await Db.Devices.FirstOrDefaultAsync(d => d.Id == s.DeviceId);
+                var profile = await client.GetProfileAsync(s.DeviceId);
+                if (existing is null)
+                {
+                    Db.Devices.Add(new Device
+                    {
+                        Id = s.DeviceId,
+                        Alias = s.Alias,
+                        ModelName = s.ModelName,
+                        DeviceType = s.DeviceType,
+                        ProfileJson = profile.Raw.ToJsonString(),
+                        LastSeenUtc = DateTime.UtcNow,
+                    });
+                }
+                else
+                {
+                    existing.Alias = s.Alias;
+                    existing.ModelName = s.ModelName;
+                    existing.DeviceType = s.DeviceType;
+                    existing.ProfileJson = profile.Raw.ToJsonString();
+                    existing.LastSeenUtc = DateTime.UtcNow;
+                }
+            }
+            await Db.SaveChangesAsync();
+            devices = await Db.Devices.AsNoTracking().OrderBy(d => d.Alias).ToListAsync();
+        }
+        catch (ThinqException ex)
+        {
+            Logger.LogWarning(ex, "ThinQ refresh failed");
+            error = $"ThinQ error ({(int)ex.Status}): {ex.Message}\n{ex.Body}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Refresh failed");
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private static string ShortType(string deviceType) =>
+        deviceType.StartsWith("DEVICE_") ? deviceType[7..] : deviceType;
+}

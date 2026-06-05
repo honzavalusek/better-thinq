@@ -1,0 +1,22 @@
+{
+  "messageId": "abc-123",
+  "timestamp": "2026-05-28T10:00:00Z",
+  "response": [
+    {
+      "deviceId": "ac-living-room-1",
+      "deviceInfo": {
+        "alias": "Living Room AC",
+        "modelName": "PAC_910604_EU",
+        "deviceType": "DEVICE_AIR_CONDITIONER"
+      }
+    },
+    {
+      "deviceId": "ac-bedroom-1",
+      "deviceInfo": {
+        "alias": "Bedroom AC",
+        "modelName": "PAC_910604_EU",
+        "deviceType": "DEVICE_AIR_CONDITIONER"
+      }
+    }
+  ]
+}

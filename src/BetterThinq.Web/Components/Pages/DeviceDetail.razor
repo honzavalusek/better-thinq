@@ -1,0 +1,205 @@
+@page "/devices/{DeviceId}"
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject ThinqClientProvider ClientProvider
+@inject ILogger<DeviceDetail> Logger
+
+<PageTitle>@(device?.Alias ?? "Device") · BetterThinQ</PageTitle>
+
+<header class="px-4 pt-8 pb-3 sticky top-0 bg-gray-50/95 backdrop-blur z-10 flex items-center justify-between gap-3">
+    <a href="/devices" class="text-sm text-blue-600 min-h-[44px] inline-flex items-center">← Back</a>
+    <h1 class="text-lg font-semibold truncate">@(device?.Alias ?? "Device")</h1>
+    <span class="w-12"></span>
+</header>
+
+@if (device is null)
+{
+    <p class="px-4 text-gray-500">Unknown device.</p>
+}
+else
+{
+    <div class="px-4 space-y-4">
+        <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="text-xs text-gray-500">@device.ModelName · @device.DeviceType</div>
+            <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <StateField Label="Mode" Value="@stateMode" />
+                <StateField Label="Power" Value="@statePower" />
+                <StateField Label="Current temp" Value="@stateCurrentTemp" />
+                <StateField Label="Target temp" Value="@stateTargetTemp" />
+                <StateField Label="Fan" Value="@stateFan" />
+                <StateField Label="Updated" Value="@(lastReadUtc?.ToLocalTime().ToString("HH:mm:ss"))" />
+            </div>
+            <div class="mt-4 grid grid-cols-2 gap-2">
+                <button @onclick="ReadState" disabled="@busyState"
+                        class="min-h-[44px] inline-flex items-center justify-center bg-white border border-gray-300 text-gray-700 rounded-lg px-3 py-2 text-sm">
+                    @(busyState ? "Reading…" : "Read current state")
+                </button>
+                <button @onclick="TurnOff" disabled="@busyPower"
+                        class="min-h-[44px] inline-flex items-center justify-center bg-white border border-red-300 text-red-700 rounded-lg px-3 py-2 text-sm font-medium">
+                    @(busyPower ? "Turning off…" : "Turn off")
+                </button>
+
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Apply template</h2>
+            @if (templates.Count == 0)
+            {
+                <p class="text-sm text-gray-500 mt-3">
+                    No templates yet. <a href="/templates/new" class="text-blue-600">Create one</a>.
+                </p>
+            }
+            else
+            {
+                <div class="mt-3 space-y-2">
+                    @foreach (var t in templates)
+                    {
+                        <button type="button" @onclick="() => Apply(t)" disabled="@busyApply"
+                                class="w-full text-left min-h-[44px] rounded-lg border border-gray-200 hover:bg-gray-50 active:bg-gray-100 px-3 py-3 disabled:opacity-60">
+                            <div class="font-medium text-sm">@t.Name</div>
+                            <div class="text-xs text-gray-500">@Summarize(t)</div>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (toast is not null)
+        {
+            <div class="rounded-lg @(toastIsError ? "bg-red-50 border border-red-200 text-red-700" : "bg-emerald-50 border border-emerald-200 text-emerald-700") text-sm p-3 whitespace-pre-wrap">
+                @toast
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string DeviceId { get; set; } = "";
+
+    private Device? device;
+    private List<Template> templates = [];
+    private bool busyState;
+    private bool busyApply;
+    private bool busyPower;
+    private DateTime? lastReadUtc;
+    private string? stateMode, statePower, stateCurrentTemp, stateTargetTemp, stateFan;
+    private string? toast;
+    private bool toastIsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        device = await Db.Devices.AsNoTracking().FirstOrDefaultAsync(d => d.Id == DeviceId);
+        templates = await Db.Templates.AsNoTracking().OrderBy(t => t.Name).ToListAsync();
+        if (device is not null)
+        {
+            await ReadState();
+        }
+    }
+
+    private async Task ReadState()
+    {
+        if (device is null) return;
+        busyState = true;
+        try
+        {
+            var client = await ClientProvider.GetAsync();
+            if (client is null) return;
+            var state = await client.GetDeviceAsync(device.Id);
+
+            statePower = state.StringAt("operation.airConOperationMode")
+                         ?? state.StringAt("airConOperationMode");
+            stateMode = state.StringAt("airConJobMode.currentJobMode")
+                        ?? state.StringAt("airConJobMode");
+            stateCurrentTemp = Format(state.NumberAt("temperature.currentTemperature"));
+            stateTargetTemp = Format(state.NumberAt("temperature.targetTemperature"));
+            stateFan = state.StringAt("airFlow.windStrength")
+                       ?? state.StringAt("windStrength");
+            lastReadUtc = DateTime.UtcNow;
+        }
+        catch (ThinqException ex)
+        {
+            Logger.LogWarning(ex, "Read state failed");
+            ShowToast($"Read failed ({(int)ex.Status}): {ex.Message}\n{ex.Body}", isError: true);
+        }
+        finally
+        {
+            busyState = false;
+        }
+    }
+
+    private async Task Apply(Template t)
+    {
+        if (device is null) return;
+        busyApply = true; toast = null;
+        try
+        {
+            var client = await ClientProvider.GetAsync();
+            if (client is null) { ShowToast("Settings not configured.", isError: true); return; }
+            var profileNode = System.Text.Json.Nodes.JsonNode.Parse(device.ProfileJson)
+                              ?? new System.Text.Json.Nodes.JsonObject();
+            var profile = new DeviceProfile(profileNode);
+            var commands = BetterThinq.Web.ThinQ.ThinqCommandBuilder.Build(t, profile);
+            if (commands.Count == 0)
+            {
+                ShowToast("Template has no fields applicable to this device.", isError: true);
+                return;
+            }
+            foreach (var cmd in commands)
+            {
+                await client.SendCommandAsync(device.Id, cmd);
+            }
+            ShowToast($"Applied “{t.Name}” ({commands.Count} command{(commands.Count == 1 ? "" : "s")}).", isError: false);
+            await ReadState();
+        }
+        catch (ThinqException ex)
+        {
+            Logger.LogWarning(ex, "Apply failed");
+            ShowToast($"Apply failed ({(int)ex.Status}): {ex.Message}\n{ex.Body}", isError: true);
+        }
+        finally
+        {
+            busyApply = false;
+        }
+    }
+
+    private async Task TurnOff()
+    {
+        if (device is null) return;
+        busyPower = true; toast = null;
+        try
+        {
+            var client = await ClientProvider.GetAsync();
+            if (client is null) { ShowToast("Settings not configured.", isError: true); return; }
+            await client.SendCommandAsync(device.Id, BetterThinq.Web.ThinQ.ThinqCommandBuilder.PowerCommand(AcPower.Off));
+            ShowToast("Turned off.", isError: false);
+            await ReadState();
+        }
+        catch (ThinqException ex)
+        {
+            Logger.LogWarning(ex, "Turn off failed");
+            ShowToast($"Turn off failed ({(int)ex.Status}): {ex.Message}\n{ex.Body}", isError: true);
+        }
+        finally
+        {
+            busyPower = false;
+        }
+    }
+
+    private void ShowToast(string msg, bool isError)
+    {
+        toast = msg;
+        toastIsError = isError;
+    }
+
+    private static string? Format(double? n) => n is null ? null : $"{n}°C";
+
+    private static string Summarize(Template t)
+    {
+        var parts = new List<string>();
+        if (t.Mode is { } m) parts.Add(m.ToString());
+        if (t.TargetTemperatureC is { } c) parts.Add($"{c}°C");
+        if (t.FanSpeed is { } f) parts.Add($"Fan {f}");
+        return parts.Count == 0 ? "(power on only)" : string.Join(" · ", parts);
+    }
+}

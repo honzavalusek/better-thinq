@@ -1,0 +1,33 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="min-h-screen flex flex-col bg-gray-50 text-gray-900">
+    <main class="flex-1 pb-24">
+        @Body
+    </main>
+    @if (!IsSetup)
+    {
+        <BottomNav />
+    }
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="underline ml-2">Reload</a>
+    <span class="dismiss">×</span>
+</div>
+
+@code {
+    private bool IsSetup => new Uri(Nav.Uri).AbsolutePath.StartsWith("/setup", StringComparison.OrdinalIgnoreCase);
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += HandleLocationChanged;
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Nav.LocationChanged -= HandleLocationChanged;
+}

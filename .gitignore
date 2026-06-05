@@ -1,4 +1,18 @@
-
 .claude/
+
+# Build output
+**/bin/
+**/obj/
+
+# IDE
+.vs/
+.idea/
+*.user
+
+# Runtime data (encrypted PAT, SQLite, Data Protection keys)
+data/
+
+# OS
+.DS_Store
 
 CLAUDE.md

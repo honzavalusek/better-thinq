@@ -1,0 +1,33 @@
+@inject NavigationManager Nav
+@implements IDisposable
+
+<nav class="fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 grid grid-cols-2 z-50"
+     style="padding-bottom: env(safe-area-inset-bottom);">
+    <a href="/devices" class="@TabClass("/devices")">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 17v-6h6v6m-9 4h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        <span class="text-xs mt-1">Devices</span>
+    </a>
+    <a href="/templates" class="@TabClass("/templates")">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 6h16M4 12h16M4 18h7" />
+        </svg>
+        <span class="text-xs mt-1">Templates</span>
+    </a>
+</nav>
+
+@code {
+    private string Path => new Uri(Nav.Uri).AbsolutePath;
+    private bool IsActive(string p) => Path.StartsWith(p, StringComparison.OrdinalIgnoreCase);
+
+    private string TabClass(string p) =>
+        "flex flex-col items-center justify-center h-16 min-h-[44px] " +
+        (IsActive(p) ? "text-blue-600 bg-blue-50" : "text-gray-500 hover:text-gray-800");
+
+    protected override void OnInitialized() => Nav.LocationChanged += HandleLocationChanged;
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+    public void Dispose() => Nav.LocationChanged -= HandleLocationChanged;
+}

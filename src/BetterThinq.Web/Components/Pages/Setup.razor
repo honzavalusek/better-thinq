@@ -1,0 +1,112 @@
+@page "/setup"
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject PatProtector Protector
+@inject ThinqClientProvider ClientProvider
+@inject NavigationManager Nav
+
+<PageTitle>Setup · BetterThinQ</PageTitle>
+
+<section class="max-w-md mx-auto px-4 pt-10 pb-12">
+    <h1 class="text-2xl font-semibold tracking-tight">Welcome to BetterThinQ</h1>
+    <p class="text-gray-600 mt-2 text-sm">
+        Paste your LG ThinQ Personal Access Token to get started.
+        Issue one at
+        <a class="text-blue-600 underline" href="https://connect-pat.lgthinq.com/" target="_blank" rel="noreferrer">connect-pat.lgthinq.com</a>.
+    </p>
+
+    <EditForm Model="form" OnValidSubmit="Save" class="mt-8 space-y-5" FormName="setup">
+        <DataAnnotationsValidator />
+
+        <div>
+            <label class="block text-sm font-medium mb-1" for="pat">Personal Access Token</label>
+            <InputTextArea id="pat" @bind-Value="form.Pat"
+                rows="4"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="eyJ..." />
+            <ValidationMessage For="@(() => form.Pat)" class="text-red-600 text-xs mt-1" />
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium mb-1" for="country">Country (ISO-2)</label>
+            <InputText id="country" @bind-Value="form.Country" maxlength="2"
+                class="w-full rounded-lg border border-gray-300 px-3 py-3 text-base uppercase focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="GB" />
+            <p class="text-xs text-gray-500 mt-1">Two-letter ISO code (e.g. GB, US, DE, KR).</p>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium mb-1" for="region">Region</label>
+            <InputSelect id="region" @bind-Value="form.Region"
+                class="w-full rounded-lg border border-gray-300 px-3 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <option value="@ThinqRegion.Eic">Europe (eic)</option>
+                <option value="@ThinqRegion.Aic">Americas (aic)</option>
+                <option value="@ThinqRegion.Kic">Korea (kic)</option>
+            </InputSelect>
+        </div>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3">@error</div>
+        }
+
+        <button type="submit"
+            disabled="@busy"
+            class="w-full min-h-[44px] inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-medium rounded-lg px-4 py-3 transition">
+            @(busy ? "Saving…" : "Save & continue")
+        </button>
+    </EditForm>
+</section>
+
+@code {
+    private readonly SetupForm form = new();
+    private bool busy;
+    private string? error;
+
+    private async Task Save()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var existing = await Db.Settings.FirstOrDefaultAsync();
+            if (existing is null)
+            {
+                Db.Settings.Add(new Settings
+                {
+                    Id = 1,
+                    EncryptedPat = Protector.Encrypt(form.Pat.Trim()),
+                    Country = form.Country.Trim().ToUpperInvariant(),
+                    Region = form.Region,
+                    CreatedUtc = DateTime.UtcNow,
+                });
+            }
+            else
+            {
+                existing.EncryptedPat = Protector.Encrypt(form.Pat.Trim());
+                existing.Country = form.Country.Trim().ToUpperInvariant();
+                existing.Region = form.Region;
+            }
+            await Db.SaveChangesAsync();
+            ClientProvider.Invalidate();
+            Nav.NavigateTo("/devices", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    public sealed class SetupForm
+    {
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.MinLength(10)]
+        public string Pat { get; set; } = "";
+        [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(2, MinimumLength = 2)]
+        public string Country { get; set; } = "GB";
+        public ThinqRegion Region { get; set; } = ThinqRegion.Eic;
+    }
+}

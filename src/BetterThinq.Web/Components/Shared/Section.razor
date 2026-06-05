@@ -1,0 +1,17 @@
+<div class="bg-white rounded-xl border border-gray-200 p-4">
+    <div class="flex items-baseline justify-between mb-3">
+        <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">@Title</h2>
+        @if (HasValue)
+        {
+            <button type="button" @onclick="OnClear" class="text-xs text-blue-600 min-h-[28px] px-1">Clear</button>
+        }
+    </div>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+    [Parameter] public bool HasValue { get; set; }
+    [Parameter] public EventCallback OnClear { get; set; }
+}

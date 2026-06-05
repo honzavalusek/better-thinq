@@ -1,0 +1,15 @@
+{
+  "messageId": "abc-124",
+  "response": {
+    "property": {
+      "airConOperationMode": { "mode": ["r", "w"], "value": { "w": ["POWER_ON", "POWER_OFF"] } },
+      "airConJobMode": { "mode": ["r", "w"], "value": { "w": ["COOL", "HEAT", "DRY", "FAN", "AUTO"] } },
+      "tempControl": {
+        "targetTemperature": { "mode": ["r", "w"], "value": { "min": 16, "max": 30, "step": 1, "unit": "C" } }
+      },
+      "airFlow": {
+        "windStrength": { "mode": ["r", "w"], "value": { "w": ["LOW", "MID", "HIGH"] } }
+      }
+    }
+  }
+}
